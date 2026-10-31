@@ -39,6 +39,7 @@ open build/TouchBarLyrics.app
   - 簡體轉繁體
   - 同時在選單列顯示歌詞
   - 重新抓取這首歌的歌詞
+  - 查看歌詞快取大小、清除所有快取、設定自動刪除多久沒聽的歌詞（7 / 30 / 90 天或永不，預設 30 天）
 
 Control Strip 沒出現 ♪ 的話：系統設定 → 鍵盤 → Touch Bar 設定，確認「顯示 Control Strip」已開啟。
 
@@ -47,7 +48,7 @@ Control Strip 沒出現 ♪ 的話：系統設定 → 鍵盤 → Touch Bar 設�
 | 部分 | 作法 | 檔案 |
 |---|---|---|
 | 播放狀態 | AppleScript 每秒讀取曲目與進度，搭配播放器的系統通知；兩次讀取之間用時間推算，每 0.1 秒更新顯示 | `NowPlaying.swift` |
-| 歌詞搜尋 | LRCLIB → 網易雲 → QQ 音樂（中日韓文歌曲先查後兩者），結果快取在 `~/Library/Caches/TouchBarLyrics/` | `LyricsService.swift` |
+| 歌詞搜尋 | LRCLIB → 網易雲 → QQ 音樂（中日韓文歌曲先查後兩者），結果快取在 `~/Library/Caches/TouchBarLyrics/`，超過設定天數沒聽的歌詞會自動刪除 | `LyricsService.swift` |
 | 歌詞解析 | LRC 格式，支援一行多個時間標籤與 `[offset:]` | `LRC.swift` |
 | Touch Bar | 私有 API 的 system modal Touch Bar 與 Control Strip 項目 | `TouchBar.swift` |
 

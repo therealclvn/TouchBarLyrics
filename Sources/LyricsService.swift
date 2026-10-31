@@ -27,10 +27,42 @@ final class LyricsService {
         try? FileManager.default.removeItem(at: cacheFile(for: track))
     }
 
+    /// 快取的歌曲數與總大小（bytes）
+    func cacheStats() -> (count: Int, bytes: Int) {
+        cachedFiles().reduce(into: (0, 0)) { total, file in
+            total.0 += 1
+            total.1 += file.size
+        }
+    }
+
+    func clearCache() {
+        for file in cachedFiles() { try? FileManager.default.removeItem(at: file.url) }
+    }
+
+    /// 刪除超過指定天數沒用到的歌詞，回傳刪除數量
+    @discardableResult
+    func pruneCache(unusedForDays days: Int) -> Int {
+        let cutoff = Date().addingTimeInterval(-Double(days) * 86400)
+        let stale = cachedFiles().filter { $0.lastUsed < cutoff }
+        for file in stale { try? FileManager.default.removeItem(at: file.url) }
+        return stale.count
+    }
+
+    private func cachedFiles() -> [(url: URL, size: Int, lastUsed: Date)] {
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
+        let urls = (try? FileManager.default.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: keys)) ?? []
+        return urls.filter { $0.pathExtension == "json" }.map { url in
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            return (url, values?.fileSize ?? 0, values?.contentModificationDate ?? .distantPast)
+        }
+    }
+
     func fetch(_ track: Track) async -> Lyrics? {
         let cacheFile = cacheFile(for: track)
         if let data = try? Data(contentsOf: cacheFile),
            let cached = try? JSONDecoder().decode(Lyrics.self, from: data) {
+            // 用修改時間記錄「最後使用」，自動清理時依此判斷
+            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: cacheFile.path)
             return cached
         }
 

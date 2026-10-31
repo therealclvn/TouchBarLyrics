@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let bar = LyricsTouchBar()
     private var statusItem: NSStatusItem!
     private var displayTimer: Timer?
+    private var pruneTimer: Timer?
 
     private var track: Track?
     private var lyrics: Lyrics?
@@ -20,15 +21,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var autoPresent: Bool { defaults.bool(forKey: "autoPresent") }
     private var traditional: Bool { defaults.bool(forKey: "traditional") }
     private var showInMenuBar: Bool { defaults.bool(forKey: "showInMenuBar") }
+    /// 0 代表永不自動刪除
+    private var cacheRetentionDays: Int { defaults.integer(forKey: "cacheRetentionDays") }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        defaults.register(defaults: ["autoPresent": true, "traditional": true, "showInMenuBar": false])
+        defaults.register(defaults: ["autoPresent": true, "traditional": true, "showInMenuBar": false, "cacheRetentionDays": 30])
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(systemSymbolName: "music.note.list", accessibilityDescription: "Touch Bar 歌詞")
         statusItem.button?.imagePosition = .imageLeading
         let menu = NSMenu()
         menu.delegate = self
+        menu.autoenablesItems = false // 由程式自行決定哪些項目可點
         statusItem.menu = menu
 
         bar.onTrayTap = { [weak self] in self?.bar.present() }
@@ -39,6 +43,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         monitor.start()
 
         displayTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in self?.refreshDisplay() }
+
+        pruneCache()
+        pruneTimer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in self?.pruneCache() }
+    }
+
+    private func pruneCache() {
+        guard cacheRetentionDays > 0 else { return }
+        service.pruneCache(unusedForDays: cacheRetentionDays)
     }
 
     // MARK: 播放狀態
@@ -127,6 +139,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(toggle("同時在選單列顯示歌詞", "showInMenuBar"))
         menu.addItem(item("重新抓取這首歌詞", #selector(refetch)))
         menu.addItem(.separator())
+
+        let stats = service.cacheStats()
+        let size = ByteCountFormatter.string(fromByteCount: Int64(stats.bytes), countStyle: .file)
+        menu.addItem(disabled("歌詞快取：\(stats.count) 首（\(size)）"))
+        let retention = NSMenuItem(title: "自動刪除未使用的歌詞", action: nil, keyEquivalent: "")
+        let options = NSMenu()
+        for (days, title) in [(7, "超過 7 天"), (30, "超過 30 天"), (90, "超過 90 天"), (0, "永不")] {
+            let option = item(title, #selector(setRetention(_:)))
+            option.tag = days
+            option.state = days == cacheRetentionDays ? .on : .off
+            options.addItem(option)
+        }
+        retention.submenu = options
+        menu.addItem(retention)
+        let clear = item("清除所有歌詞快取", #selector(clearCache))
+        clear.isEnabled = stats.count > 0
+        menu.addItem(clear)
+        menu.addItem(.separator())
         menu.addItem(item("結束", #selector(quit), key: "q"))
     }
 
@@ -160,6 +190,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let key = sender.representedObject as? String else { return }
         defaults.set(!defaults.bool(forKey: key), forKey: key)
         if key == "traditional" { reparse() }
+    }
+
+    @objc private func setRetention(_ sender: NSMenuItem) {
+        defaults.set(sender.tag, forKey: "cacheRetentionDays")
+        pruneCache()
+    }
+
+    @objc private func clearCache() {
+        service.clearCache() // 正在播放的歌詞已在記憶體中，不受影響
     }
 
     @objc private func refetch() {
